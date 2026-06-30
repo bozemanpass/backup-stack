@@ -1,0 +1,17 @@
+FROM alpine:3.20
+
+# restic     - the backup engine (mandatory client-side encryption, dedup, S3-native)
+# docker-cli - to exec consistency hooks (pg_dump, etc.) inside target containers
+# bash       - script runtime
+# tzdata     - correct cron scheduling in the configured timezone
+# ca-certificates - TLS to the object store
+RUN apk add --no-cache restic bash docker-cli tzdata ca-certificates
+
+COPY scripts /scripts
+RUN chmod +x /scripts/*.sh
+
+WORKDIR /backup
+
+# Default mode is the scheduler. Other modes: backup | restore | prune | check.
+ENTRYPOINT ["/scripts/docker-entrypoint.sh"]
+CMD ["schedule"]

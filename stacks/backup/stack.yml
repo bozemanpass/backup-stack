@@ -1,0 +1,11 @@
+name: backup
+description: "Backup and restore of stack service data (restic to S3 object storage)"
+# The backup container image (built from ./containers/backup in this repo).
+containers:
+  - name: bozemanpass/backup
+    path: ./containers/backup
+# A single-service pod. When backup is enabled, `stack deploy` injects read-only mounts
+# of the application's data volumes into this pod's `backup` service.
+pods:
+  - name: backup
+    path: ./backup

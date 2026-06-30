@@ -1,0 +1,17 @@
+services:
+  backup:
+    image: bozemanpass/backup:stack
+    restart: always
+    volumes:
+      # The Docker socket lets the backup service run consistency hooks (e.g. pg_dump)
+      # *inside* the target service container, the same way the ingress proxy uses it.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # restic's local cache, to keep incremental backups fast.
+      - backup-restic-cache:/root/.cache/restic
+      #
+      # NOTE: read-only mounts of the application's data volumes are INJECTED here by
+      # `stack deploy` when backup is enabled. Each becomes `- <vol>:/backup/<vol>:ro`.
+      # See ../stack/docs/backup-implementation.md.
+
+volumes:
+  backup-restic-cache:
