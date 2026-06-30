@@ -5,7 +5,7 @@ FROM alpine:3.20
 # bash       - script runtime
 # tzdata     - correct cron scheduling in the configured timezone
 # ca-certificates - TLS to the object store
-RUN apk add --no-cache restic bash docker-cli tzdata ca-certificates
+RUN apk add --no-cache restic bash docker-cli tzdata ca-certificates curl
 
 COPY scripts /scripts
 RUN chmod +x /scripts/*.sh

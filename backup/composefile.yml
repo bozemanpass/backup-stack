@@ -9,8 +9,9 @@ services:
       # restic's local cache, to keep incremental backups fast.
       - backup-restic-cache:/root/.cache/restic
       #
-      # NOTE: read-only mounts of the application's data volumes are INJECTED here by
-      # `stack deploy` when backup is enabled. Each becomes `- <vol>:/backup/<vol>:ro`.
+      # NOTE: mounts of the application's data volumes are INJECTED here by `stack deploy`
+      # when backup is enabled. Each becomes `- <vol>:/backup/<vol>:rw` (rw so the same
+      # container can restore in place; scheduled backups only read).
       # See ../stack/docs/backup-implementation.md.
 
 volumes:
