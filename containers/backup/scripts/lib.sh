@@ -35,7 +35,7 @@ fi
 ensure_repo() {
   local attempts="${BACKUP_INIT_ATTEMPTS:-30}"
   local delay="${BACKUP_INIT_DELAY:-5}"
-  local i
+  local i last_err=""
   for (( i = 1; i <= attempts; i++ )); do
     if restic cat config >/dev/null 2>&1; then
       return 0
@@ -43,9 +43,15 @@ ensure_repo() {
     echo "backup: repository not ready at ${RESTIC_REPOSITORY}, initializing (attempt ${i}/${attempts})"
     # May fail because the store is still warming up or because another initializer got
     # there first; either way, loop and let the check above confirm the repo next pass.
-    restic init >/dev/null 2>&1 || true
+    # Keep the error: transient warmup noise stays quiet, but a persistent failure (e.g. an
+    # S3 auth/config problem, not mere warmup) is reported below instead of being swallowed.
+    last_err="$(restic init 2>&1)" || true
     sleep "${delay}"
   done
   echo "backup: repository at ${RESTIC_REPOSITORY} not usable after ${attempts} attempts" >&2
+  if [ -n "${last_err}" ]; then
+    echo "backup: last 'restic init' error:" >&2
+    printf '%s\n' "${last_err}" >&2
+  fi
   return 1
 }
