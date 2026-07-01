@@ -24,10 +24,28 @@ if [ -z "${RESTIC_PASSWORD:-}" ] && [ -z "${RESTIC_PASSWORD_FILE:-}" ]; then
   exit 1
 fi
 
-# Create the repository on first use (idempotent).
+# Ensure the restic repository exists and reads back cleanly, riding out a cold object
+# store (e.g. SeaweedFS still warming up) without wedging it. Guards three hazards:
+#   - transient read/write failures while the store warms up -> retry with backoff;
+#   - a concurrent initializer winning the race (the scheduler container and a manual
+#     `backup` run can both land here at once) -> treat a failed `restic init` (including
+#     "already initialized") as non-fatal and let the next `restic cat config` confirm it;
+#   - building on a half-written / corrupt repo -> require `restic cat config` to succeed
+#     before returning, so we never proceed on a config that only partially landed.
 ensure_repo() {
-  if ! restic cat config >/dev/null 2>&1; then
-    echo "backup: initializing restic repository at ${RESTIC_REPOSITORY}"
-    restic init
-  fi
+  local attempts="${BACKUP_INIT_ATTEMPTS:-30}"
+  local delay="${BACKUP_INIT_DELAY:-5}"
+  local i
+  for (( i = 1; i <= attempts; i++ )); do
+    if restic cat config >/dev/null 2>&1; then
+      return 0
+    fi
+    echo "backup: repository not ready at ${RESTIC_REPOSITORY}, initializing (attempt ${i}/${attempts})"
+    # May fail because the store is still warming up or because another initializer got
+    # there first; either way, loop and let the check above confirm the repo next pass.
+    restic init >/dev/null 2>&1 || true
+    sleep "${delay}"
+  done
+  echo "backup: repository at ${RESTIC_REPOSITORY} not usable after ${attempts} attempts" >&2
+  return 1
 }
