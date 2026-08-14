@@ -1,18 +1,33 @@
 #!/usr/bin/env bash
 # Restore a snapshot into the volume tree.
 #
-# Usage: restore.sh [snapshot-id]    (default: latest)
+# Usage: restore.sh [snapshot-id] [volume ...]    (default: latest, every volume)
 #
 # Restore is run as a distinct mode: the full application stack is stopped first and the
 # data volumes are mounted READ-WRITE under /backup, so restic writes the chosen epoch's
 # data back in place. The full stack is then started again. See ../stack/docs/backup.md.
+#
+# Naming volumes restores only those, which is what `stack manage ... backup restore
+# --volume` passes through. The k8s target restores per volume too (K8up restores one
+# claim at a time), so the granularity is the same on both.
 set -euo pipefail
 source /scripts/lib.sh
 ensure_repo
 
 snapshot="${1:-latest}"
-echo "backup: restoring snapshot '${snapshot}' into /backup"
-restic restore "$snapshot" --target /
+shift || true
+
+include_args=()
+for volume in "$@"; do
+  include_args+=(--include "/backup/${volume}")
+done
+
+if [ ${#include_args[@]} -eq 0 ]; then
+  echo "backup: restoring snapshot '${snapshot}' into /backup"
+else
+  echo "backup: restoring $* from snapshot '${snapshot}' into /backup"
+fi
+restic restore "$snapshot" --target / "${include_args[@]+"${include_args[@]}"}"
 
 # NOTE: logical dumps land back under /backup/_dumps as files. Replaying them into a live
 # database (e.g. pg_restore) is a deliberate follow-up, not yet automated - see the

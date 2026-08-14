@@ -45,7 +45,23 @@ ensure_repo() {
     # there first; either way, loop and let the check above confirm the repo next pass.
     # Keep the error: transient warmup noise stays quiet, but a persistent failure (e.g. an
     # S3 auth/config problem, not mere warmup) is reported below instead of being swallowed.
-    last_err="$(restic init 2>&1)" || true
+    if last_err="$(restic init 2>&1)"; then
+      # An init that reports success but whose repository cannot be read back has
+      # written a repository that never will be: restic will not init over it, so
+      # every later attempt fails on "already initialized" and the loop above can
+      # only spin. Seen against an object store that is still coming up, which
+      # accepts the writes and returns something else for the reads. Say so here,
+      # where the cause is still visible.
+      if ! restic cat config >/dev/null 2>&1; then
+        echo "backup: created the repository at ${RESTIC_REPOSITORY} but cannot read it back." >&2
+        echo "backup: the object store accepted writes it does not serve; it was probably not" >&2
+        echo "backup: ready. The repository is unusable and has to be removed from the store" >&2
+        echo "backup: before backups can run." >&2
+        restic cat config >&2 || true
+        return 1
+      fi
+      return 0
+    fi
     sleep "${delay}"
   done
   echo "backup: repository at ${RESTIC_REPOSITORY} not usable after ${attempts} attempts" >&2
