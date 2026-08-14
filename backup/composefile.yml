@@ -6,8 +6,10 @@ services:
       # The Docker socket lets the backup service run consistency hooks (e.g. pg_dump)
       # *inside* the target service container, the same way the ingress proxy uses it.
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # restic's local cache, to keep incremental backups fast.
-      - backup-restic-cache:/root/.cache/restic
+      # restic's local cache, to keep incremental backups fast. Excluded from the
+      # backup itself: it is derived data, rebuilt on demand, and backing it up
+      # would grow the repository with a copy of its own index.
+      - backup-restic-cache:/root/.cache/restic   # @stack backup-exclude
       #
       # NOTE: mounts of the application's data volumes are INJECTED here by `stack deploy`
       # when backup is enabled. Each becomes `- <vol>:/backup/<vol>:rw` (rw so the same
