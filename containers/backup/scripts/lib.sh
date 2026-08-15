@@ -32,6 +32,23 @@ fi
 #     "already initialized") as non-fatal and let the next `restic cat config` confirm it;
 #   - building on a half-written / corrupt repo -> require `restic cat config` to succeed
 #     before returning, so we never proceed on a config that only partially landed.
+# Require a repository that already exists, without creating one.
+#
+# For reading -- a restore above all -- creating the repository is never the right
+# answer: an empty repository restores nothing, so a typo in the repository
+# location would otherwise look like a backup with nothing in it rather than like
+# the mistake it is. That matters most when the location came from outside (a
+# restore from another deployment's backups, via RESTIC_REPOSITORY).
+require_repo() {
+  if restic cat config >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "backup: no readable restic repository at ${RESTIC_REPOSITORY}" >&2
+  echo "backup: (a restore never creates one -- check the repository location)" >&2
+  restic cat config >&2 || true
+  return 1
+}
+
 ensure_repo() {
   local attempts="${BACKUP_INIT_ATTEMPTS:-30}"
   local delay="${BACKUP_INIT_DELAY:-5}"

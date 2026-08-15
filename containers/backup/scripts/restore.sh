@@ -10,9 +10,14 @@
 # Naming volumes restores only those, which is what `stack manage ... backup restore
 # --volume` passes through. The k8s target restores per volume too (K8up restores one
 # claim at a time), so the granularity is the same on both.
+#
+# RESTIC_REPOSITORY may be set by the caller to restore from a repository other than
+# this deployment's own -- `stack manage ... backup restore --from` does exactly that,
+# to seed a deployment from an existing backup. lib.sh only derives the repository from
+# BACKUP_S3_* when it is not already set, so nothing else here has to know.
 set -euo pipefail
 source /scripts/lib.sh
-ensure_repo
+require_repo
 
 snapshot="${1:-latest}"
 shift || true
