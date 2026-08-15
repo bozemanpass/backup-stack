@@ -10,7 +10,7 @@ set -euo pipefail
 hooks="${BACKUP_PRE_HOOKS:-}"
 [ -z "$hooks" ] && exit 0
 
-dump_dir="/backup/_dumps"
+dump_dir="/data/_dumps"
 mkdir -p "$dump_dir"
 
 # Resolve the compose project of THIS container, so hooks only exec into sibling services
