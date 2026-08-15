@@ -17,17 +17,15 @@ Backup and restore of persistent service data for the
   container, the same way the ingress proxy uses the Docker socket.
 
 On Kubernetes the equivalent role is played by [K8up](https://k8up.io), also restic-based. This repo covers
-the Docker case only, and the two are not currently interchangeable: both write ordinary restic
-repositories, but this one takes a single snapshot of `/backup` holding every volume, where K8up takes one
-snapshot per volume under `/data/<volume>`. Either is readable with the `restic` CLI; neither target's
-restore understands the other's layout.
+the Docker case only, but the two write the same layout -- one snapshot per volume, recorded at
+`/data/<volume>` -- so a repository written by either can be restored by the other.
 
 ## Layout
 
 | Path | Purpose |
 |------|---------|
 | `stacks/backup/stack.yml` | Stack definition — declares the container and the pod. |
-| `backup/composefile.yml` | The canonical `backup` service. `stack deploy` appends mounts of the application's data volumes here when backup is enabled -- read-write, because restoring writes back through them. |
+| `backup/composefile.yml` | The canonical `backup` service. `stack deploy` appends mounts of the application's data volumes here when backup is enabled, at `/data/<volume>` -- read-write, because restoring writes back through them. |
 | `containers/backup/` | The `bozemanpass/backup` image: `Containerfile`, `build.sh`, and `scripts/`. |
 
 ## Container modes
@@ -37,7 +35,7 @@ The image entrypoint takes a mode argument (default `schedule`):
 | Mode | Action |
 |------|--------|
 | `schedule` | Install a cron entry (`BACKUP_SCHEDULE`) that runs `backup` periodically. |
-| `backup` | Run hooks, then `restic backup` of `/backup`, then apply retention. |
+| `backup` | Run hooks, then one `restic backup` per volume mounted under `/data`, then apply retention. |
 | `restore [snapshot] [volume…]` | Restore a snapshot into the (rw-mounted) volumes, all of them or only those named. Default `latest`. Never creates a repository: restoring from one that is not there is a mistake, not an empty backup. |
 | `list` | One `<id> <date> <volume,volume>` line per snapshot -- the format `stack manage … backup list` prints. |
 | `prune` | Apply the retention policy (`restic forget --prune`). |

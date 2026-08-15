@@ -12,8 +12,10 @@ services:
       - backup-restic-cache:/root/.cache/restic   # @stack backup-exclude
       #
       # NOTE: mounts of the application's data volumes are INJECTED here by `stack deploy`
-      # when backup is enabled. Each becomes `- <vol>:/backup/<vol>:rw` (rw so the same
-      # container can restore in place; scheduled backups only read).
+      # when backup is enabled. Each becomes `- <vol>:/data/<vol>:rw` (rw so the same
+      # container can restore in place; scheduled backups only read). /data/<vol> is also
+      # where K8up mounts a claim on the Kubernetes target, so both targets record the
+      # same paths in a snapshot and can restore each other's repositories.
       # See ../stack/docs/backup-implementation.md.
 
 volumes:
