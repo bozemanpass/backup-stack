@@ -22,24 +22,34 @@ dump_dir="/data/_dumps"
 mkdir -p "$dump_dir"
 
 # Resolve the compose project of THIS container, so hooks only exec into sibling services
-# in the same deployment.
-self_id="$(grep -o -m1 '[0-9a-f]\{64\}' /proc/self/cgroup || true)"
-project="$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' "$self_id" 2>/dev/null || true)"
+# in the same deployment. Compose sets a container's hostname to its own id, which docker
+# inspect resolves to the project label. (/proc/self/cgroup is no use here: under cgroup
+# v2 it is just "0::/", with no container id in it.) The fallback is STACK_DEPLOYMENT,
+# which `stack deploy` injects with the deployment's name -- the same value it uses as
+# the compose project name.
+project="$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' "$(hostname)" 2>/dev/null || true)"
+project="${project:-${STACK_DEPLOYMENT:-}}"
+if [ -z "$project" ]; then
+  echo "backup: cannot resolve this deployment's compose project - refusing to back up without its dumps" >&2
+  exit 1
+fi
 
 while IFS= read -r entry; do
   [ -z "$entry" ] && continue
   read -r svc ext cmd <<< "$entry"
   if [ -z "$svc" ] || [ -z "$ext" ] || [ -z "$cmd" ]; then
-    echo "backup: malformed BACKUP_PRE_HOOKS entry '${entry}' - skipping" >&2
-    continue
+    echo "backup: malformed BACKUP_PRE_HOOKS entry '${entry}'" >&2
+    exit 1
   fi
 
   cid="$(docker ps -q \
       --filter "label=com.docker.compose.project=${project}" \
       --filter "label=com.docker.compose.service=${svc}" | head -n1)"
   if [ -z "$cid" ]; then
-    echo "backup: hook target service '${svc}' not found - skipping" >&2
-    continue
+    # A backup taken without its dump would look exactly like a working one, which is
+    # the failure mode this whole mechanism exists to prevent -- so fail the backup.
+    echo "backup: hook target service '${svc}' not found in project '${project}'" >&2
+    exit 1
   fi
 
   echo "backup: dumping '${svc}' (${cmd})"
