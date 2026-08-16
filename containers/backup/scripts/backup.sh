@@ -12,8 +12,15 @@ set -euo pipefail
 source /scripts/lib.sh
 ensure_repo
 
-# 1. Run consistency hooks (logical dumps) into the backup tree.
+# 1. Take the logical dumps. Each streams into a snapshot of its own, independent of the
+#    volume snapshots below -- so this is not a step the volume backup depends on, and
+#    the order of the two does not matter. It runs first only so that a failing dump
+#    fails the backup before it has spent time on the volumes.
 /scripts/run-hooks.sh
+# Counted so that a stack whose only backup artifact is a dump -- a database that
+# excludes its data directory, which is the arrangement the documentation recommends --
+# is not reported below as a backup with nothing in it.
+dumped=$( printf '%s\n' "${BACKUP_PRE_HOOKS:-}" | grep -c '[^[:space:]]' || true )
 
 # 2. Back up each mounted volume as its own snapshot. A volume with nothing in it is still
 #    worth a snapshot: restoring it should empty the target, not leave whatever is there.
@@ -26,14 +33,15 @@ for volume_dir in /data/*/; do
   backed_up=$(( backed_up + 1 ))
 done
 
-if [ "$backed_up" -eq 0 ]; then
-  # Nothing is mounted, so the deployment has no volumes or none reached this container.
-  # Silently writing an empty repository would look exactly like a working backup.
-  echo "backup: no volumes are mounted under /data - nothing to back up" >&2
+if [ "$backed_up" -eq 0 ] && [ "$dumped" -eq 0 ]; then
+  # No volumes and no dumps: the deployment has nothing to back up, or nothing reached
+  # this container. Silently writing an empty repository would look exactly like a
+  # working backup.
+  echo "backup: no volumes are mounted under /data and no dump commands are configured" >&2
   exit 1
 fi
 
 # 3. Apply the retention policy.
 /scripts/prune.sh
 
-echo "backup: complete (${backed_up} volumes)"
+echo "backup: complete (${backed_up} volumes, ${dumped} dumps)"

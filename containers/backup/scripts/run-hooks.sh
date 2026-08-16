@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # Run per-service consistency-dump commands *inside* their containers (via the Docker
-# socket) and write the output under /data/_dumps so restic captures a consistent
-# logical backup alongside the file-level volume data.
+# socket) and stream each one's stdout straight into restic as a snapshot of its own.
+#
+# This is what a "backup command" means, here and in K8up: the command's **stdout is the
+# backup**. It is not a hook that quiesces a volume so that the file-level backup of it is
+# consistent -- that would be a different feature, needing the dump to be written before
+# the volumes are read, and neither engine offers it. K8up in particular snapshots the
+# PVCs independently of the annotated command, so a command whose useful effect is a file
+# it writes into a volume is captured a backup late there, or not at all. Streaming is
+# the model both engines actually implement, so it is the model stack exposes.
 #
 # BACKUP_PRE_HOOKS holds one entry per line:
 #
@@ -13,13 +20,16 @@
 # line, so it may contain anything but a newline. This format is a contract with
 # `stack deploy`, which writes it from the stack's `@stack backup-command` /
 # `@stack backup-file-extension` annotations (see docs/backup.md in the stack repo).
+#
+# Each dump becomes a snapshot named "<deployment>-<service>.<extension>", which is the
+# shape K8up gives the same dump on the other target, so `backup list` reads the same on
+# both and either engine's repository can be read by the other.
 set -euo pipefail
 
 hooks="${BACKUP_PRE_HOOKS:-}"
 [ -z "$hooks" ] && exit 0
 
-dump_dir="/data/_dumps"
-mkdir -p "$dump_dir"
+source /scripts/lib.sh
 
 # Resolve the compose project of THIS container, so hooks only exec into sibling services
 # in the same deployment. Compose sets a container's hostname to its own id, which docker
@@ -53,5 +63,12 @@ while IFS= read -r entry; do
   fi
 
   echo "backup: dumping '${svc}' (${cmd})"
-  docker exec "$cid" sh -c "$cmd" > "${dump_dir}/${svc}.${ext}"
+  # Streamed rather than buffered to a file first, so a dump larger than this
+  # container's disk is still possible -- which is the point of a logical backup of a
+  # big database. The cost is that a command failing halfway has already handed restic
+  # the bytes it produced: `set -o pipefail` makes that fail the backup loudly, but the
+  # short snapshot is written. A failed backup whose last snapshot cannot be trusted is
+  # the same bargain K8up makes for the same reason.
+  docker exec "$cid" sh -c "$cmd" \
+    | restic backup --stdin --stdin-filename "${project}-${svc}.${ext}" --host "${STACK_DEPLOYMENT:-stack}"
 done <<< "$hooks"
